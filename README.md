@@ -2,90 +2,111 @@
 
 Official training code for **ReSPO: Reshaped Sequence Policy Optimization**.
 
-This repository is intentionally small. It contains the ReSPO policy loss and
-the launch scripts for the Qwen3-1.7B-Base and Qwen3-30B-A3B-Base experiments.
-Evaluation, W diagnostics, and response-length analyses are not included.
-
 - Project page: <https://respo.github.io> (coming soon)
-- Base framework: [verl](https://github.com/verl-project/verl)
-- Training data: [DAPO-MATH-17k](https://huggingface.co/datasets/BytedTsinghua-SIA/DAPO-Math-17k)
+- Framework: [verl](https://github.com/verl-project/verl)
+- Training data: [DAPO-MATH-17k](https://huggingface.co/datasets/open-r1/DAPO-Math-17k-Processed)
 
-## Setup
+This repository contains a complete verl tree plus the ReSPO policy loss and
+paper configurations. It includes only the training path: evaluation results,
+W diagnostics, response-length analysis, experiment logs, and checkpoints are
+not part of the release. The original verl overview is preserved in
+[README_VERL.md](README_VERL.md).
 
-The code is a verl submodule and is expected at `recipe/respo/code`. It is
-tested with verl commit `9713583cad81e4118ac21c108986ad1f7b6db4b8`.
+## Reproduce the training runs
 
-```bash
-git clone --recursive git@github.com:yhangchen/verl.git
-cd verl
-git submodule update --init --recursive
-```
-
-The ReSPO extension was developed and tested against verl base commit
-`9713583cad81e4118ac21c108986ad1f7b6db4b8`.
-
-Install verl's NVIDIA/vLLM environment following the upstream installation
-guide. The 30B run additionally needs verl's Megatron, MBridge, DeepEP, and
-Transformer Engine dependencies. The reported configurations used eight GPUs:
-H100-class GPUs for 1.7B and 141 GB H200 GPUs for 30B-A3B.
-
-Prepare the training split once:
+Clone the repository, then install the environment for the model you want to
+train:
 
 ```bash
-python recipe/respo/code/scripts/prepare_dapo_math.py
+git clone git@github.com:yhangchen/ReSPO-code.git
+cd ReSPO-code
+
+# Qwen3-1.7B / FSDP
+bash recipe/respo/scripts/install_environment.sh --backend fsdp
+
+# Or Qwen3-30B-A3B / Megatron (also supports the 1.7B run)
+bash recipe/respo/scripts/install_environment.sh --backend megatron
+
+source .venv/bin/activate
+python recipe/respo/scripts/prepare_dapo_math.py
 ```
-
-This writes `data/dapo_math/train.parquet`. You can instead point the launchers
-at an existing compatible parquet file with `TRAIN_FILE=/path/to/train.parquet`.
-
-## Training
 
 Run each model with rollout-reuse ratio `N` in `{8, 16, 32}`:
 
 ```bash
-bash recipe/respo/code/scripts/train_qwen3_1_7b.sh --n 8
-bash recipe/respo/code/scripts/train_qwen3_30b_a3b.sh --n 8
+bash recipe/respo/scripts/train_qwen3_1_7b.sh --n 8
+bash recipe/respo/scripts/train_qwen3_30b_a3b.sh --n 8
 ```
 
-Repeat with `--n 16` and `--n 32` to reproduce the six ReSPO training runs.
-Each run uses 1,024 policy updates, mini-batch size 32, eight responses per
-prompt, learning rate `1e-6`, token-mean aggregation, and no KL penalty.
+Repeat the commands with `--n 16` and `--n 32` to reproduce all six runs.
+Installation—especially the Megatron build—is covered step by step in
+[recipe/respo/ENVIRONMENT.md](recipe/respo/ENVIRONMENT.md).
 
-The launchers accept ordinary Hydra overrides after `--n`. Common environment
-overrides are `MODEL_PATH`, `TRAIN_FILE`, `CHECKPOINT_DIR`, `GPUS_PER_NODE`,
-`NNODES`, `PYTHON_BIN`, and `TRAINER_LOGGER`. For example:
+## Experiment configuration
 
-```bash
-TRAINER_LOGGER="['console','wandb']" \
-  bash recipe/respo/code/scripts/train_qwen3_1_7b.sh --n 16
-```
+| Setting | Qwen3-1.7B-Base | Qwen3-30B-A3B-Base |
+|---|---:|---:|
+| Training backend | FSDP | Megatron-Core |
+| GPUs | 8 × H100/H200 class | 8 × H200 141 GB |
+| Response limit | 15,360 | 8,192 |
+| Actor parallelism | Ulysses SP 2 | TP 2, EP 8 |
+| vLLM tensor parallelism | 2 | 4 |
+| Responses per prompt | 8 | 8 |
+| PPO mini-batch size | 32 | 32 |
+| Learning rate | `1e-6` | `1e-6` |
+| Trainer iterations | `1024 / N` | `1024 / N` |
+| KL penalty | none | none |
 
-The scripts disable in-training validation so that this release contains only
-the training path. This does not change the optimizer updates used in the
-reported experiments.
+Each trainer iteration reuses the generated batch for `N` mini-batch updates,
+giving 1,024 optimizer mini-batch updates per run. Both models use a global
+prompt batch of `32 × N`, token-mean loss aggregation, Adam-family
+optimization, 5% learning-rate warmup, weight decay 0.1, and gradient clipping
+at 1.0. The 30B run applies the paper's linear overlong penalty from 4,096 to
+8,192 response tokens.
 
-## Method configuration
+The fixed ReSPO kernel is:
 
-The published runs use one fixed two-branch kernel:
-
-| Branch | alpha | beta | lambda |
+| Advantage branch | alpha | beta | lambda |
 |---|---:|---:|---:|
-| Positive advantage | 2 | 0.5 | 2 |
-| Negative advantage | 1 | 0.5 | 2 |
+| Positive | 2 | 0.5 | 2 |
+| Negative | 1 | 0.5 | 2 |
 
-Qwen3-1.7B uses FSDP, a 15,360-token response cap, and rollout tensor
-parallelism 2. Qwen3-30B-A3B uses Megatron TP=2/EP=8, an 8,192-token response
-cap, rollout tensor parallelism 4, and the paper's linear overlong penalty from
-4,096 to 8,192 tokens.
+## Layout
 
-## Tests
+- `recipe/respo/core_algos.py`: ReSPO sequence-level policy loss.
+- `recipe/respo/main_ppo.py`: minimal verl training entry point.
+- `recipe/respo/workers.py`: worker registration and FSDP reload support.
+- `recipe/respo/scripts/prepare_dapo_math.py`: training-data preparation.
+- `recipe/respo/scripts/train_qwen3_1_7b.sh`: paper FSDP launcher.
+- `recipe/respo/scripts/train_qwen3_30b_a3b.sh`: paper Megatron launcher.
+- `recipe/respo/ENVIRONMENT.md`: detailed CUDA and Megatron installation guide.
+
+The launchers accept Hydra overrides after `--n`. Common environment overrides
+are `MODEL_PATH`, `TRAIN_FILE`, `CHECKPOINT_DIR`, `GPUS_PER_NODE`, `NNODES`,
+`PYTHON_BIN`, and `TRAINER_LOGGER`. For example:
 
 ```bash
-python -m pytest recipe/respo/code/tests
-bash -n recipe/respo/code/scripts/train_qwen3_1_7b.sh
-bash -n recipe/respo/code/scripts/train_qwen3_30b_a3b.sh
+MODEL_PATH=/models/Qwen3-1.7B-Base \
+CHECKPOINT_DIR=/checkpoints/respo-1.7b-n16 \
+  bash recipe/respo/scripts/train_qwen3_1_7b.sh --n 16
 ```
 
-## License
+In-training validation is disabled so the public path contains training only;
+this does not change the optimizer updates used by the experiments.
 
-Apache License 2.0. See [LICENSE](LICENSE).
+## Checks
+
+CPU-side checks can be run without starting a training job:
+
+```bash
+python -m pytest -q tests/recipe/respo
+bash -n recipe/respo/scripts/install_environment.sh
+bash -n recipe/respo/scripts/train_qwen3_1_7b.sh
+bash -n recipe/respo/scripts/train_qwen3_30b_a3b.sh
+```
+
+## License and acknowledgement
+
+Released under the Apache License 2.0. ReSPO is implemented on top of
+[verl](https://github.com/verl-project/verl); see [Notice.txt](Notice.txt) and
+the retained upstream source headers for attribution.
