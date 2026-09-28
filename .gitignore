@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Environments and editor state
+.venv*/
+venv/
+.env
+.vscode/
+.idea/
+
+# ReSPO runtime artifacts
+/data/
+**/checkpoints/
+**/outputs/
+**/logs/
+**/wandb/
+**/eval_outputs/
+*.ckpt
+*.pt
+*.out
+*.log
+
+# Builds and local caches
+/build/
+/dist/
+/build_deps/
+*.egg
+.DS_Store
+*.swp
