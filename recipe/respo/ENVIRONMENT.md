@@ -17,7 +17,7 @@ The reference stack is:
 | FlashAttention | 2.8.1, torch 2.8, CXX11 ABI build |
 | Transformer Engine | 2.14.0, CUDA 12 build |
 | Megatron-Core | `core_v0.16.1` |
-| MBridge | 0.15.1 |
+| MBridge | post-0.15.1 commit `641a5a0` |
 | DeepEP | 1.2.1 |
 
 Do not replace the pinned Megatron or MBridge revisions with `main`. These
@@ -218,8 +218,8 @@ explicitly. Recreate the environment rather than mixing cu12 and cu13 wheels.
 
 An error such as `isinstance() arg 2 must be a type` usually means Megatron
 `main` was installed. Later Megatron versions changed custom FSDP symbols that
-MBridge inspects. Reinstall the pinned `core_v0.16.1` commit and MBridge 0.15.1,
-or recreate the environment with the supplied script.
+MBridge inspects. Reinstall the pinned `core_v0.16.1` commit and MBridge
+`641a5a0`, or recreate the environment with the supplied script.
 
 ### DeepEP cannot find `math.h`
 

@@ -140,10 +140,11 @@ if [[ "$BACKEND" == "megatron" ]]; then
         transformer_engine==2.14.0
 
     # These pins are intentional. Megatron main has broken MBridge/verl
-    # compatibility in the past; MBridge 0.15.1 supports Qwen3-MoE.
+    # compatibility in the past. The MBridge revision is the post-0.15.1
+    # revision used by verl's stable CUDA images and supports Qwen3-MoE.
     uv pip install --no-deps \
         "git+https://github.com/NVIDIA/Megatron-LM.git@55ac7082517c3878ae653c07c09c534b8aed49f6" \
-        "git+https://github.com/ISEEKYAN/mbridge.git@0cd4ae23f2425da77a80cb3f517828452fa8e984"
+        "git+https://github.com/ISEEKYAN/mbridge.git@641a5a01de71080b2200d10e369090e40c9a351c"
 
     BUILD_DIR=$(mktemp -d "${TMPDIR:-/tmp}/respo-gpu-build.XXXXXX")
     cleanup() { rm -rf -- "$BUILD_DIR"; }
